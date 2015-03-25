@@ -1,0 +1,155 @@
+<%
+'-------------------------------------------------------------------------------------------
+'Adiciona o comportamento de "namespaces" à sessão. Um namespace pode ser utilizado
+'por determinadas páginas, e quando o usuário acessar uma página que não utiliza
+'aquele namespace, as chaves dentro dele são limpas.
+'
+'Utilização:
+'
+'	TempSession("MeuNamespace")("NomeDoParticipante") = "Fulano"
+'
+'	Response.Write TempSession("MeuNamespace")("NomeDoParticipante") 'Imprime "Fulano"
+'
+'-------------------------------------------------------------------------------------------
+
+
+'Prefixo dos ítens que estão em "Temp Session"
+Const TempSession_prefix_ = "__TEMP_SESSION__"
+
+'Guarda os namespaces utilizados
+Dim TempSession_UsedNamespaces_
+Set TempSession_UsedNamespaces_ = CreateObject("Scripting.Dictionary")
+
+
+'Representa um namespace (uma coleção de itens relacionados) na sessão.
+'CLASSE INTERNA - NÃO DEVE SER UTILIZADA DIRETAMENTE (utilize a função "TempSession")
+Class cTempSessionNamespace_
+
+	Private namespace_
+
+
+	Public Default Property Get Item(key)	
+		Dim fullKey : fullKey = GetFullKey(key)
+	
+		If IsObject(Session(fullKey)) Then
+			Set Item = Session(fullKey)
+		Else
+			Item = Session(fullKey)
+		End If
+	End Property
+
+	Public Property Let Item(key, value)
+		Session(GetFullKey(key)) = value
+	End Property
+
+	Public Property Set Item(key, value)
+		Set Session(GetFullKey(key)) = value
+	End Property
+	
+	Public Function Init(namespace)
+
+		If namespace = "" Then
+			Call Err.Raise(-1, "cTempSession.Using", "O parâmetro namespace (primeiro parâmetro) deve ser informado.")
+		End If
+
+		If namespace_ <> "" Then
+			Call Err.Raise(-1, "cTempSession.Using", "O namespace desta Temp Session já foi inicializado.")
+		End If
+
+		namespace_ = namespace
+
+		Set Init = Me
+
+	End Function
+
+
+	Private Function GetFullKey(key)
+
+		If Not IsNotEmpty(namespace_) Then
+			Call Err.Raise(-1, "cTempSession.GetFullKey", "O namespace desta Temp Session não foi inicializado.")
+		End If
+
+		GetFullKey = TempSession_prefix_ & namespace_ & "__" & key
+
+	End Function
+
+End Class
+
+
+'Função que dá acesso à funcionalidade de sessão temporária
+Function TempSession(key)
+
+	Dim tempSessionNs
+
+	If Not TempSession_UsedNamespaces_.Exists(key) Then 'Cria o namespace caso ele não exista
+
+		Set tempSessionNs = New cTempSessionNamespace_
+		tempSessionNs.Init(key)
+
+		Set TempSession_UsedNamespaces_(key) = tempSessionNs
+
+	Else
+		Set tempSessionNs = TempSession_UsedNamespaces_(key)
+	End If
+
+	Set TempSession = tempSessionNs
+
+End Function
+
+
+'Limpa todas as sessões temporárias que não foram utilizadas. Deve ser invocada no final de todas as páginas (foi incluída em footer.asp)
+Function TempSession_CleanUnused()
+
+	Dim i
+
+	For i = 1 To Session.Contents.Count
+	
+		Dim sessionKey : sessionKey = Session.Contents.Key(i)
+
+		'Verifica se esta chave está em Temp Session (ou seja, se possui o prefixo de Temp Session)
+		If InStr(sessionKey, TempSession_prefix_) = 1 Then
+
+			Dim deveRemover : deveRemover = True
+
+			'Verifica se esta chave está em um namespace que foi utilizado
+			For Each tempSessionkey In TempSession_UsedNamespaces_
+
+				If InStr(sessionKey, TempSession_prefix_ & tempSessionkey) = 1 Then
+					deveRemover = False
+					Exit For
+				End If
+
+			Next
+
+			If deveRemover Then 
+				Session.Contents.Remove(sessionKey)
+				i = i - 1
+			End If
+
+		End If
+
+	Next
+
+End Function
+
+'Força a remoção de um namespace específico
+Function TempSession_Remove(namespace)
+
+	Dim i
+
+	For i = 1 To Session.Contents.Count
+	
+		Dim sessionKey : sessionKey = Session.Contents.Key(i)
+
+		If InStr(sessionKey, TempSession_prefix_ & namespace) = 1 Then
+		
+			Session.Contents.Remove(sessionKey)
+			i = i - 1
+			
+		End If
+		
+	Next
+
+End Function
+
+%>
